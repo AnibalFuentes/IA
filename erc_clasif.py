@@ -1,10 +1,12 @@
-
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import (
+    classification_report, confusion_matrix,
+    ConfusionMatrixDisplay, accuracy_score, f1_score
+)
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -72,8 +74,14 @@ criterion = nn.CrossEntropyLoss(weight=weight_tensor)
 optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
 # ----------------------------
-# Training loop
+# Training loop with early stopping and tracking
 # ----------------------------
+train_losses = []
+val_accuracies = []
+best_val_acc = 0
+patience = 10
+wait = 0
+
 for epoch in range(1, EPOCHS + 1):
     model.train()
     total_loss = 0.0
@@ -97,12 +105,48 @@ for epoch in range(1, EPOCHS + 1):
             correct += (preds == yb).sum().item()
     val_acc = correct / len(val_loader.dataset)
 
+    train_losses.append(avg_loss)
+    val_accuracies.append(val_acc)
+
+    if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        wait = 0
+        torch.save(model.state_dict(), "best_model.pth")
+    else:
+        wait += 1
+        if wait >= patience:
+            print(f"Early stopping en la época {epoch}")
+            break
+
     if epoch % 10 == 0 or epoch == 1:
         print(f"Epoch {epoch:3d} | Loss: {avg_loss:.4f} | Val Acc: {val_acc:.4f}")
 
 # ----------------------------
+# Visualización de métricas
+# ----------------------------
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(train_losses, label='Pérdida de entrenamiento')
+plt.xlabel("Época")
+plt.ylabel("Pérdida")
+plt.title("Evolución de la Pérdida")
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(val_accuracies, label='Precisión de validación', color='green')
+plt.xlabel("Época")
+plt.ylabel("Precisión")
+plt.title("Evolución de la Precisión")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# ----------------------------
 # Evaluation
 # ----------------------------
+model.load_state_dict(torch.load("best_model.pth"))
 model.eval()
 all_preds, all_true = [], []
 with torch.no_grad():
@@ -115,8 +159,11 @@ with torch.no_grad():
 y_pred = np.concatenate(all_preds)
 y_true = np.concatenate(all_true)
 target_names = encoders["Target"].classes_
+
 print("\nClassification report (validation):")
 print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
+print(f"Accuracy: {accuracy_score(y_true, y_pred):.4f}")
+print(f"Macro F1:  {f1_score(y_true, y_pred, average='macro'):.4f}")
 
 cm = confusion_matrix(y_true, y_pred)
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=target_names)
@@ -134,12 +181,17 @@ for col, le in encoders.items():
 X_ext = scaler.transform(df_ext.drop("Target", axis=1).values.astype(np.float32))
 X_ext_t = torch.tensor(X_ext, dtype=torch.float32, device=DEVICE)
 
-model.eval()
 with torch.no_grad():
     pred_ext = model(X_ext_t).argmax(dim=1).cpu().numpy()
 
 labels_ext = encoders["Target"].inverse_transform(pred_ext)
 df_ext["Predicción"] = labels_ext
 df_ext["Target"] = encoders["Target"].inverse_transform(df_ext["Target"])
+
 print("\nResultados externos Actual vs Predicción:")
 print(df_ext[["Target", "Predicción"]])
+
+# ----------------------------
+# Exportar a CSV
+# ----------------------------
+df_ext.to_csv("predicciones_erc.csv", index=False)

@@ -1,37 +1,103 @@
-# Importamos las librerías necesarias
-from sklearn.svm import SVC  # Importamos el clasificador SVC con RBF kernel
-import numpy as np  # Para manejar matrices y arrays de manera eficiente
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import rbf_kernel
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# Datos de entrada (X1, X2, X3, X4: síntomas)
-X = np.array([
-    [0, 0, 0, 0],  # Dolor de cabeza: No, Fiebre: No, Tos: No, Dolor de rodilla: No
-    [1, 1, 1, 1],  # Dolor de cabeza: Sí, Fiebre: Sí, Tos: Sí, Dolor de rodilla: Sí
-    [1, 1, 1, 0],  # Dolor de cabeza: Sí, Fiebre: Sí, Tos: Sí, Dolor de rodilla: No
-    [0, 0, 0, 1],  # Dolor de cabeza: No, Fiebre: No, Tos: No, Dolor de rodilla: Sí
-    [0, 1, 1, 0],  # Dolor de cabeza: No, Fiebre: Sí, Tos: Sí, Dolor de rodilla: No
-    [0, 1, 1, 1],  # Dolor de cabeza: No, Fiebre: Sí, Tos: Sí, Dolor de rodilla: Sí
-    [0, 0, 1, 0],  # Dolor de cabeza: No, Fiebre: No, Tos: Sí, Dolor de rodilla: No
-    [0, 0, 1, 1],  # Dolor de cabeza: No, Fiebre: No, Tos: Sí, Dolor de rodilla: Sí
-    [1, 0, 1, 0],  # Dolor de cabeza: Sí, Fiebre: No, Tos: Sí, Dolor de rodilla: No
-    [1, 0, 1, 1],  # Dolor de cabeza: Sí, Fiebre: No, Tos: Sí, Dolor de rodilla: Sí
+# Datos binarios (síntomas) y etiquetas (resfriado o no)
+X_train = np.array([
+    [0, 0, 0, 0],
+    [1, 1, 1, 1],
+    [1, 1, 1, 0],
+    [0, 0, 0, 1],
+    [0, 1, 1, 0],
+    [0, 1, 1, 1],
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+    [1, 0, 1, 0],
+    [1, 0, 1, 1]
 ])
+y_train = np.array([0, 1, 1, 0, 1, 1, 0, 0, 1, 1])
 
-# Salidas esperadas (y): 0 significa no tener resfriado, 1 significa tener resfriado
-y = np.array([0, 1, 1, 0, 1, 1, 0, 0, 1, 1])
+# -------------------------------------
+# Funciones RBF
+# -------------------------------------
+def rbf_features(X, centers, gamma):
+    return rbf_kernel(X, centers, gamma=gamma)
 
-# Creamos el clasificador SVC con kernel RBF
-modelo_rbf = SVC(kernel='rbf', gamma='scale', random_state=42)
+def train_rbf(X, y, n_centers=4, gamma=1.0):
+    kmeans = KMeans(n_clusters=n_centers, random_state=0).fit(X)
+    centers = kmeans.cluster_centers_
+    Phi = rbf_features(X, centers, gamma)
+    W = np.linalg.pinv(Phi).dot(y)
+    return W, centers
 
-# Entrenamos el modelo con los datos de entrada X y las salidas esperadas y
-modelo_rbf.fit(X, y)
+def predict_rbf(X_new, W, centers, gamma):
+    Phi = rbf_features(X_new, centers, gamma)
+    return Phi.dot(W)
 
-# Mostramos los parámetros y el soporte vectorial aprendido
-print("Soportes vectores:", modelo_rbf.support_)
+# -------------------------------------
+# Diagnóstico para una entrada
+# -------------------------------------
+sintomas = ["Dolor de cabeza", "Fiebre", "Tos", "Dolor de rodilla"]
+entrada_ejemplo = [1, 0, 0, 0]
 
-# Predicciones con el modelo entrenado
-predicciones_rbf = modelo_rbf.predict(X)
+def diagnosticar_resfriado_rbf(entrada_binaria, W, centers, gamma):
+    entrada = np.array([entrada_binaria])
+    pred = predict_rbf(entrada, W, centers, gamma)
+    return 1 if pred[0] > 0.5 else 0, pred[0]
 
-# Mostramos los resultados de las predicciones comparados con las salidas esperadas
-print("\nResultados con RBF:")
-for entrada, real, pred in zip(X, y, predicciones_rbf):
-    print(f"Entrada: {entrada}, Esperada: {real}, Predicha: {pred}")
+# -------------------------------------
+# Comparar modelos con diferentes centros
+# -------------------------------------
+def evaluar_modelo(n_centros, gamma=1.0):
+    W, centers = train_rbf(X_train, y_train, n_centros, gamma)
+    valores_pred = predict_rbf(X_train, W, centers, gamma)
+    pred_bin = (valores_pred > 0.5).astype(int)
+    accuracy = np.mean(pred_bin == y_train)
+    
+    return {
+        "centros": n_centros,
+        "accuracy": accuracy,
+        "real": y_train,
+        "predicho": pred_bin,
+        "valores_rbf": valores_pred
+    }
+
+resultados_4 = evaluar_modelo(4)
+resultados_7 = evaluar_modelo(5)
+
+# -------------------------------------
+# Mostrar resultados en consola
+# -------------------------------------
+def mostrar_resultados(resultados):
+    print(f"Modelo con {resultados['centros']} centros")
+    print(f"Precisión: {resultados['accuracy']:.2f}")
+    print("\nValores predichos vs reales:")
+    for i, (real, pred, valor_rbf) in enumerate(zip(resultados["real"], resultados["predicho"], resultados["valores_rbf"])):
+        print(f"Ejemplo {i+1}: Real = {real}, Predicho = {pred}, Valor RBF = {valor_rbf:.4f}")
+    print("\n" + "-"*40)
+
+mostrar_resultados(resultados_4)
+mostrar_resultados(resultados_7)
+
+# -------------------------------------
+# Mostrar resultados y gráficas de dispersión
+# -------------------------------------
+def mostrar_grafica_dispersion(resultados, titulo):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(np.arange(len(resultados["real"])), resultados["real"], label="Real", color="blue", marker='o', s=100, alpha=0.7)
+    plt.scatter(np.arange(len(resultados["predicho"])), resultados["predicho"], label="Predicho", color="red", marker='x', s=100, alpha=0.7)
+    plt.title(f"{titulo} - Precisión: {resultados['accuracy']:.2f}")
+    plt.xlabel("Ejemplo")
+    plt.ylabel("Etiqueta")
+    plt.legend()
+    plt.grid(True)
+
+# Mostrar las gráficas de dispersión
+mostrar_grafica_dispersion(resultados_4, "Modelo RBF con 4 centros")
+mostrar_grafica_dispersion(resultados_7, "Modelo RBF con 7 centros")
+
+plt.show()
+
+

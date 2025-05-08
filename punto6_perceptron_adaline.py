@@ -1,20 +1,39 @@
 import numpy as np
-from sklearn.linear_model import SGDRegressor
 
+# Datos de entrada
 X = np.array([
     [0.1, 0.9, 0.1],
     [0.1, 0.1, 0.9],
     [0.1, 0.1, 0.1],
     [0.9, 0.9, 0.9]
 ])
-y1 = np.array([0.1, 0.1, 0.1, 0.9])
-y2 = np.array([0.9, 0.9, 0.1, 0.9])
 
-adaline1 = SGDRegressor(eta0=0.1, learning_rate='constant')
-adaline2 = SGDRegressor(eta0=0.1, learning_rate='constant')
+# Salidas deseadas
+D = np.array([
+    [0.1, 0.9],
+    [0.1, 0.9],
+    [0.1, 0.1],
+    [0.9, 0.9]
+])
 
-adaline1.fit(X, y1)
-adaline2.fit(X, y2)
+# Parámetros
+lr = 0.1
+epochs = 100
+threshold = 0.5
+np.random.seed(1)
+weights = np.random.uniform(-0.1, 0.1, (2, 3))  # 2 neuronas x 3 entradas
 
-print("Predicción d1:", adaline1.predict([[0.1, 0.9, 0.1]]))
-print("Predicción d2:", adaline2.predict([[0.1, 0.9, 0.1]]))
+def activation(net):
+    return (net >= threshold).astype(float)
+
+for epoch in range(epochs):
+    for i in range(len(X)):
+        x = X[i]
+        d = D[i]
+        net = weights @ x
+        y = activation(net)
+        error = d - y
+        weights += lr * np.outer(error, x)
+
+print("Pesos entrenados (Perceptrón):")
+print(weights)
